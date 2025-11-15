@@ -1,0 +1,76 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+*.egg-info/
+dist/
+build/
+
+# Environment variables
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+frontend/dist/
+frontend/.vite/
+
+# Uploads
+uploads/*
+!uploads/.gitkeep
+
+# Models (if cached locally)
+models/
+*.pth
+*.pt
+*.bin
+
+# Database
+*.db
+*.sqlite
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Coverage reports
+.coverage
+htmlcov/
+*.cover
+coverage.xml
+coverage.xsl
+.pytest_cache/
+
+# Test/debug files
+*_err.txt
+*_response.json
+*_resp.json
+pretty_*.json
+full_*.json
+
