@@ -10,29 +10,18 @@ from .services.embedding import text_model, clip_model
 logger = logging.getLogger(__name__)
 
 
-<<<<<<< HEAD
 def _is_ci_environment() -> bool:
-    """
-    Detect if running in a CI environment.
-    Checks for common CI environment variables.
-    """
     ci_indicators = [
-        "CI",  # Generic CI indicator (set by most CI systems)
-        "GITHUB_ACTIONS",  # GitHub Actions
-        "TRAVIS",  # Travis CI
-        "JENKINS_URL",  # Jenkins
-        "GITLAB_CI",  # GitLab CI
-        "CIRCLECI",  # CircleCI
-        "APPVEYOR",  # AppVeyor
-        "TEAMCITY_VERSION",  # TeamCity
+        "CI",
+        "GITHUB_ACTIONS",
+        "TRAVIS",
+        "JENKINS_URL",
+        "GITLAB_CI",
+        "CIRCLECI",
+        "APPVEYOR",
+        "TEAMCITY_VERSION",
     ]
     return any(os.getenv(indicator) for indicator in ci_indicators)
-=======
-def run_startup_checks():
-    # Skip checks when running tests or when explicitly asked
-    if os.getenv("SKIP_STARTUP_CHECKS") in ("1", "true", "True"):
-        return
->>>>>>> 48bf367d013c5f96062d823b5df7642f297b7caf
 
 
 def _check_database() -> bool:
@@ -136,6 +125,10 @@ def run_startup_checks() -> None:
     
     Automatically skips checks in CI environments where dependencies may not be available.
     """
+    if os.getenv("SKIP_STARTUP_CHECKS") in ("1", "true", "True"):
+        logger.info("Startup checks skipped by configuration.")
+        return
+    
     # Skip startup checks in CI environments
     if _is_ci_environment():
         logger.info("CI environment detected. Skipping startup checks.")

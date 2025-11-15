@@ -3,7 +3,7 @@ from typing import Dict, List, Optional
 
 from ..config import Config
 from ..db import connect_db
-from ..repository.rag_repository import insert_document
+from ..repository.rag_repository import insert_document, update_document_metadata
 from .embedding import embed_image_from_stream, embed_text
 
 
@@ -21,17 +21,22 @@ def chunk_text(text: str, chunk_size: Optional[int] = None, overlap: Optional[in
     return chunks
 
 
-def process_pdf(file_path: str, original_filename: str) -> Dict[str, int]:
+def process_pdf(file_path: str, original_filename: str, owner_user_id: int, content_hash: str, document_id: int | None = None) -> Dict[str, int]:
     """Process PDF, store embeddings, and return ingestion metadata."""
     conn = connect_db()
     print("✅ Connected to PostgreSQL database.")
 
-    document_id = insert_document(
-        conn,
-        filename=original_filename,
-        source_path=file_path,
-        metadata={"source": "pdf_upload"},
-    )
+    if document_id is None:
+        document_id = insert_document(
+            conn,
+            filename=original_filename,
+            source_path=file_path,
+            owner_user_id=owner_user_id,
+            content_hash=content_hash,
+            metadata={"source": "pdf_upload"},
+        )
+    else:
+        update_document_metadata(document_id, original_filename, file_path, content_hash, {"source": "pdf_replace"})
 
     text_chunk_count = 0
     image_chunk_count = 0

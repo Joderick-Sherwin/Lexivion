@@ -18,6 +18,11 @@ function SearchSection({ onSearch, isSearching, setIsSearching }) {
 
     setIsSearching(true)
     try {
+      const token = localStorage.getItem('lexivion_token')
+      if (!token) {
+        onSearch({ answer: '', sections: [], context: [], error: 'Please sign in to search.' })
+        return
+      }
       const response = await axios.post(
         `${API_URL}/api/search`,
         {
@@ -27,6 +32,7 @@ function SearchSection({ onSearch, isSearching, setIsSearching }) {
         {
           headers: {
             'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
           },
         }
       )

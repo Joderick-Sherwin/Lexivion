@@ -50,3 +50,7 @@ class Config:
     TEXT_EMBEDDING_DIM: int = int(os.getenv("TEXT_EMBEDDING_DIM", "1024"))
     IMAGE_EMBEDDING_DIM: int = int(os.getenv("IMAGE_EMBEDDING_DIM", "1024"))
     USE_PGVECTOR: bool = os.getenv("USE_PGVECTOR", "true").lower() in ("true", "1", "yes")
+
+    # === Auth ===
+    AUTH_SECRET: str = os.getenv("AUTH_SECRET", "change-this-secret")
+    AUTH_TOKEN_MAX_AGE: int = int(os.getenv("AUTH_TOKEN_MAX_AGE", "604800"))

@@ -38,12 +38,12 @@ def cosine_similarity(a: List[float], b: List[float]) -> float:
     return float(np.dot(va, vb) / denom)
 
 
-def _rank_chunks(query_embedding: List[float], top_k: int) -> List[Dict[str, Any]]:
+def _rank_chunks(query_embedding: List[float], top_k: int, owner_user_id: Optional[int] = None) -> List[Dict[str, Any]]:
     """Rank chunks by similarity, using pgvector if available, otherwise JSONB fallback."""
     if Config.USE_PGVECTOR:
         try:
             # Use pgvector for efficient vector search
-            return fetch_text_chunks_with_vector_search(query_embedding, top_k)
+            return fetch_text_chunks_with_vector_search(query_embedding, top_k, owner_user_id=owner_user_id)
         except Exception as e:
             # Fallback to JSONB if pgvector fails
             import logging
@@ -52,7 +52,7 @@ def _rank_chunks(query_embedding: List[float], top_k: int) -> List[Dict[str, Any
     
     # Fallback: JSONB-based similarity search
     candidate_pool_size = max(top_k * 20, Config.MAX_CONTEXT_CHUNKS * 5)
-    text_chunks = fetch_text_chunks(limit=candidate_pool_size)
+    text_chunks = fetch_text_chunks(limit=candidate_pool_size, owner_user_id=owner_user_id)
     scored: List[Dict[str, Any]] = []
 
     for chunk in text_chunks:
@@ -68,14 +68,14 @@ def _rank_chunks(query_embedding: List[float], top_k: int) -> List[Dict[str, Any
     return scored[:top_k]
 
 
-def search_rag_with_images(query: str, top_k: int = 5) -> Dict[str, Any]:
+def search_rag_with_images(query: str, top_k: int = 5, owner_user_id: Optional[int] = None) -> Dict[str, Any]:
     top_k = min(max(top_k, 1), Config.MAX_CONTEXT_CHUNKS)
     query_embedding = text_model.encode(query).tolist()
 
-    ranked_chunks = _rank_chunks(query_embedding, top_k)
+    ranked_chunks = _rank_chunks(query_embedding, top_k, owner_user_id=owner_user_id)
     chunk_ids = [chunk["id"] for chunk in ranked_chunks]
     images_by_chunk = fetch_images_for_text_chunks(chunk_ids)
-    doc_map = fetch_documents_by_ids(ch["document_id"] for ch in ranked_chunks)
+    doc_map = fetch_documents_by_ids((ch["document_id"] for ch in ranked_chunks), owner_user_id=owner_user_id)
 
     context_segments: List[Dict[str, Any]] = []
     for order, chunk in enumerate(ranked_chunks, start=1):

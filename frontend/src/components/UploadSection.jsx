@@ -55,20 +55,51 @@ function UploadSection({ onUploadSuccess, onUploadError }) {
     formData.append('file', file)
 
     try {
+      const token = localStorage.getItem('lexivion_token')
+      if (!token) {
+        onUploadError('Please sign in to upload')
+        setIsUploading(false)
+        return
+      }
       const response = await axios.post(`${API_URL}/api/upload`, formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
+          'Authorization': `Bearer ${token}`,
         },
-        timeout: 300000, // 5 minutes for large PDFs
+        timeout: 300000,
+        validateStatus: (status) => status >= 200 && status < 500,
       })
 
       const data = response.data
-      const successMessage = data.message
-        ? `${data.message} · chunks: ${data.chunks_stored}, images: ${data.images_stored}`
-        : 'File uploaded and processed successfully!'
-
-      onUploadSuccess(successMessage)
-      setFile(null)
+      if (response.status === 409 && data.can_replace) {
+        const proceed = window.confirm(`This document already exists as "${data.existing_filename}". Replace it?`)
+        if (proceed) {
+          const repForm = new FormData()
+          repForm.append('file', file)
+          const repRes = await axios.post(`${API_URL}/api/documents/${data.existing_document_id}/replace`, repForm, {
+            headers: {
+              'Content-Type': 'multipart/form-data',
+              'Authorization': `Bearer ${token}`,
+            },
+            timeout: 300000,
+          })
+          const repData = repRes.data
+          const msg = repData.message || 'Document replaced successfully'
+          onUploadSuccess(`${msg} · chunks: ${repData.chunks_stored}, images: ${repData.images_stored}`)
+          setFile(null)
+        } else {
+          onUploadError('Upload cancelled')
+        }
+      } else if (response.status >= 200 && response.status < 300) {
+        const successMessage = data.message
+          ? `${data.message} · chunks: ${data.chunks_stored}, images: ${data.images_stored}`
+          : 'File uploaded and processed successfully!'
+        onUploadSuccess(successMessage)
+        setFile(null)
+      } else {
+        const errorMessage = data.error || 'Upload failed'
+        onUploadError(errorMessage)
+      }
       // Reset file input
       const fileInput = document.getElementById('file-input')
       if (fileInput) fileInput.value = ''

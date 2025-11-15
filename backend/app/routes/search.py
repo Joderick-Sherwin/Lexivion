@@ -1,12 +1,14 @@
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, g
 
 from ..services.search import search_rag_with_images
+from ..auth import require_auth
 
 
 bp = Blueprint("search", __name__)
 
 
 @bp.route("/search", methods=["POST"])
+@require_auth
 def search():
     try:
         data = request.get_json() or {}
@@ -19,7 +21,8 @@ def search():
         if top_k < 1 or top_k > 50:
             return jsonify({"error": "top_k must be between 1 and 50"}), 400
 
-        response_payload = search_rag_with_images(query, top_k)
+        user_id = g.current_user["id"] if isinstance(g.current_user, dict) else g.current_user.get("id")
+        response_payload = search_rag_with_images(query, top_k, owner_user_id=int(user_id))
         response_payload.update(
             {
                 "query": query,

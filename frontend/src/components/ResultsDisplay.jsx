@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { ImageIcon, FileText, X } from 'lucide-react'
+import axios from 'axios'
 import './ResultsDisplay.css'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
@@ -51,14 +52,24 @@ function ResultsDisplay({ result }) {
     return `${API_URL}${chunk.document.url}#page=${page}`
   }
 
-  const openChunkViewer = (chunk) => {
-    const url = buildPdfUrl(chunk)
-    if (url) {
+  const openChunkViewer = async (chunk) => {
+    const token = localStorage.getItem('lexivion_token')
+    const rawUrl = buildPdfUrl(chunk)
+    if (!rawUrl || !token) return
+    try {
+      const res = await axios.get(rawUrl.replace(`#page=${chunk.page_number || 1}`, ''), {
+        responseType: 'blob',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const blobUrl = URL.createObjectURL(res.data)
       setActiveChunk({
         title: `Chunk ${chunk.chunk_id} · Page ${chunk.page_number || 'N/A'}`,
-        url,
+        url: `${blobUrl}#page=${chunk.page_number || 1}`,
         filename: chunk.document?.filename,
+        objectUrl: blobUrl,
       })
+    } catch (e) {
+      return
     }
   }
 
@@ -245,7 +256,10 @@ function ResultsDisplay({ result }) {
               <h3>{activeChunk.title}</h3>
               <p>{activeChunk.filename}</p>
             </div>
-            <button className="close-btn" onClick={() => setActiveChunk(null)}>
+            <button className="close-btn" onClick={() => {
+              if (activeChunk?.objectUrl) URL.revokeObjectURL(activeChunk.objectUrl)
+              setActiveChunk(null)
+            }}>
               <X size={18} />
             </button>
           </div>

@@ -6,17 +6,17 @@ from ..config import Config
 from ..db import connect_db
 
 
-def insert_document(conn, filename: str, source_path: str, metadata: Optional[Dict[str, Any]] = None) -> int:
+def insert_document(conn, filename: str, source_path: str, owner_user_id: int, content_hash: str, metadata: Optional[Dict[str, Any]] = None) -> int:
     """Create a document record and return its id."""
     try:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO rag_documents (filename, source_path, metadata)
-                VALUES (%s, %s, %s)
+                INSERT INTO rag_documents (filename, source_path, owner_user_id, content_hash, metadata)
+                VALUES (%s, %s, %s, %s, %s)
                 RETURNING id;
                 """,
-                (filename, source_path, Json(metadata or {})),
+                (filename, source_path, owner_user_id, content_hash, Json(metadata or {})),
             )
             document_id = cur.fetchone()[0]
         conn.commit()
@@ -129,30 +129,50 @@ def insert_chunk(
         raise RuntimeError(f"Failed to insert chunk: {exc}") from exc
 
 
-def fetch_text_chunks(limit: Optional[int] = None) -> List[Dict[str, Any]]:
+def fetch_text_chunks(limit: Optional[int] = None, owner_user_id: Optional[int] = None) -> List[Dict[str, Any]]:
     """Fetch text chunks ordered by recency."""
     conn = connect_db()
     try:
         limit_clause = "LIMIT %s" if limit else ""
         params: Sequence[Any] = (limit,) if limit else ()
         with conn.cursor() as cur:
-            cur.execute(
-                f"""
-                SELECT
-                    id,
-                    document_id,
-                    page_number,
-                    chunk_index,
-                    content,
-                    paired_text_embedding,
-                    metadata
-                FROM rag_chunks
-                WHERE chunk_type = 'text' AND paired_text_embedding IS NOT NULL
-                ORDER BY created_at DESC
-                {limit_clause};
-                """,
-                params,
-            )
+            if owner_user_id is not None:
+                cur.execute(
+                    f"""
+                    SELECT
+                        c.id,
+                        c.document_id,
+                        c.page_number,
+                        c.chunk_index,
+                        c.content,
+                        c.paired_text_embedding,
+                        c.metadata
+                    FROM rag_chunks c
+                    JOIN rag_documents d ON d.id = c.document_id
+                    WHERE c.chunk_type = 'text' AND c.paired_text_embedding IS NOT NULL AND d.owner_user_id = %s
+                    ORDER BY c.created_at DESC
+                    {limit_clause};
+                    """,
+                    ((owner_user_id,) + params) if params else (owner_user_id,),
+                )
+            else:
+                cur.execute(
+                    f"""
+                    SELECT
+                        id,
+                        document_id,
+                        page_number,
+                        chunk_index,
+                        content,
+                        paired_text_embedding,
+                        metadata
+                    FROM rag_chunks
+                    WHERE chunk_type = 'text' AND paired_text_embedding IS NOT NULL
+                    ORDER BY created_at DESC
+                    {limit_clause};
+                    """,
+                    params,
+                )
             rows = cur.fetchall()
         chunks: List[Dict[str, Any]] = []
         for row in rows:
@@ -280,7 +300,7 @@ def fetch_chunks_by_ids(chunk_ids: Iterable[int]) -> List[Dict[str, Any]]:
         conn.close()
 
 
-def fetch_documents_by_ids(document_ids: Iterable[int]) -> Dict[int, Dict[str, Any]]:
+def fetch_documents_by_ids(document_ids: Iterable[int], owner_user_id: Optional[int] = None) -> Dict[int, Dict[str, Any]]:
     doc_ids = list({doc_id for doc_id in document_ids if doc_id})
     if not doc_ids:
         return {}
@@ -288,14 +308,24 @@ def fetch_documents_by_ids(document_ids: Iterable[int]) -> Dict[int, Dict[str, A
     conn = connect_db()
     try:
         with conn.cursor() as cur:
-            cur.execute(
-                """
-                SELECT id, filename, source_path, metadata
-                FROM rag_documents
-                WHERE id = ANY(%s)
-                """,
-                (doc_ids,),
-            )
+            if owner_user_id is not None:
+                cur.execute(
+                    """
+                    SELECT id, filename, source_path, metadata
+                    FROM rag_documents
+                    WHERE id = ANY(%s) AND owner_user_id = %s
+                    """,
+                    (doc_ids, owner_user_id),
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT id, filename, source_path, metadata
+                    FROM rag_documents
+                    WHERE id = ANY(%s)
+                    """,
+                    (doc_ids,),
+                )
             rows = cur.fetchall()
         return {
             row[0]: {
@@ -310,13 +340,13 @@ def fetch_documents_by_ids(document_ids: Iterable[int]) -> Dict[int, Dict[str, A
         conn.close()
 
 
-def fetch_document_by_id(document_id: int) -> Optional[Dict[str, Any]]:
-    documents = fetch_documents_by_ids([document_id])
+def fetch_document_by_id(document_id: int, owner_user_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
+    documents = fetch_documents_by_ids([document_id], owner_user_id)
     return documents.get(document_id)
 
 
 def fetch_text_chunks_with_vector_search(
-    query_embedding: List[float], top_k: int
+    query_embedding: List[float], top_k: int, owner_user_id: Optional[int] = None
 ) -> List[Dict[str, Any]]:
     """Fetch top-k text chunks using pgvector cosine similarity search."""
     if not Config.USE_PGVECTOR:
@@ -328,27 +358,48 @@ def fetch_text_chunks_with_vector_search(
         query_vector = "[" + ",".join(str(f) for f in query_embedding) + "]"
         
         with conn.cursor() as cur:
-            # Use pgvector cosine distance operator (<=>) for similarity search
-            # Lower distance = higher similarity, so we order by distance ASC
-            cur.execute(
-                """
-                SELECT
-                    id,
-                    document_id,
-                    page_number,
-                    chunk_index,
-                    content,
-                    paired_text_embedding,
-                    metadata,
-                    1 - (text_embedding_vector <=> %s::vector) as similarity
-                FROM rag_chunks
-                WHERE chunk_type = 'text' 
-                  AND text_embedding_vector IS NOT NULL
-                ORDER BY text_embedding_vector <=> %s::vector
-                LIMIT %s;
-                """,
-                (query_vector, query_vector, top_k),
-            )
+            if owner_user_id is not None:
+                cur.execute(
+                    """
+                    SELECT
+                        c.id,
+                        c.document_id,
+                        c.page_number,
+                        c.chunk_index,
+                        c.content,
+                        c.paired_text_embedding,
+                        c.metadata,
+                        1 - (c.text_embedding_vector <=> %s::vector) as similarity
+                    FROM rag_chunks c
+                    JOIN rag_documents d ON d.id = c.document_id
+                    WHERE c.chunk_type = 'text' 
+                      AND c.text_embedding_vector IS NOT NULL
+                      AND d.owner_user_id = %s
+                    ORDER BY c.text_embedding_vector <=> %s::vector
+                    LIMIT %s;
+                    """,
+                    (query_vector, owner_user_id, query_vector, top_k),
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT
+                        id,
+                        document_id,
+                        page_number,
+                        chunk_index,
+                        content,
+                        paired_text_embedding,
+                        metadata,
+                        1 - (text_embedding_vector <=> %s::vector) as similarity
+                    FROM rag_chunks
+                    WHERE chunk_type = 'text' 
+                      AND text_embedding_vector IS NOT NULL
+                    ORDER BY text_embedding_vector <=> %s::vector
+                    LIMIT %s;
+                    """,
+                    (query_vector, query_vector, top_k),
+                )
             rows = cur.fetchall()
         
         chunks: List[Dict[str, Any]] = []
@@ -376,6 +427,118 @@ def fetch_text_chunks_with_vector_search(
                 }
             )
         return chunks
+    finally:
+        conn.close()
+
+
+def create_user(email: str, password_hash: str) -> Dict[str, Any]:
+    conn = connect_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO users (email, password_hash)
+                VALUES (%s, %s)
+                RETURNING id, email, created_at;
+                """,
+                (email, password_hash),
+            )
+            row = cur.fetchone()
+        conn.commit()
+        return {"id": row[0], "email": row[1], "password_hash": password_hash, "created_at": row[2]}
+    finally:
+        conn.close()
+
+
+def fetch_user_by_email(email: str) -> Optional[Dict[str, Any]]:
+    conn = connect_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, email, password_hash, created_at
+                FROM users
+                WHERE email = %s
+                """,
+                (email,),
+            )
+            row = cur.fetchone()
+        if not row:
+            return None
+        return {"id": row[0], "email": row[1], "password_hash": row[2], "created_at": row[3]}
+    finally:
+        conn.close()
+
+
+def fetch_user_by_id(user_id: int) -> Optional[Dict[str, Any]]:
+    conn = connect_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, email, password_hash, created_at
+                FROM users
+                WHERE id = %s
+                """,
+                (user_id,),
+            )
+            row = cur.fetchone()
+        if not row:
+            return None
+        return {"id": row[0], "email": row[1], "password_hash": row[2], "created_at": row[3]}
+    finally:
+        conn.close()
+def fetch_document_by_hash(owner_user_id: int, content_hash: str) -> Optional[Dict[str, Any]]:
+    conn = connect_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, filename, source_path, metadata
+                FROM rag_documents
+                WHERE owner_user_id = %s AND content_hash = %s
+                """,
+                (owner_user_id, content_hash),
+            )
+            row = cur.fetchone()
+        if not row:
+            return None
+        return {"id": row[0], "filename": row[1], "source_path": row[2], "metadata": row[3] or {}}
+    finally:
+        conn.close()
+
+
+def update_document_metadata(document_id: int, filename: str, source_path: str, content_hash: str, metadata: Optional[Dict[str, Any]] = None) -> None:
+    conn = connect_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE rag_documents
+                SET filename = %s,
+                    source_path = %s,
+                    content_hash = %s,
+                    metadata = %s
+                WHERE id = %s
+                """,
+                (filename, source_path, content_hash, Json(metadata or {}), document_id),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def delete_chunks_for_document(document_id: int) -> None:
+    conn = connect_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                DELETE FROM rag_chunks WHERE document_id = %s
+                """,
+                (document_id,),
+            )
+        conn.commit()
     finally:
         conn.close()
 

@@ -4,6 +4,7 @@ import './App.css'
 import UploadSection from './components/UploadSection'
 import SearchSection from './components/SearchSection'
 import ResultsDisplay from './components/ResultsDisplay'
+import AuthSection from './components/AuthSection'
 
 const InsightCard = ({ label, value, sublabel, icon }) => (
   <div className="insight-card">
@@ -20,6 +21,7 @@ function App() {
   const [uploadStatus, setUploadStatus] = useState(null)
   const [searchResult, setSearchResult] = useState(null)
   const [isSearching, setIsSearching] = useState(false)
+  const [auth, setAuth] = useState(null)
 
   const totalChunks = searchResult?.context?.length ?? 0
   const sectionsCount = searchResult?.sections?.length ?? 0
@@ -44,50 +46,75 @@ function App() {
             <h1>Lexivion</h1>
           </div>
           <p className="subtitle">Advanced Document Search with AI</p>
+          {auth && (
+            <div className="user-actions">
+              <div className="user-chip">
+                <span>{auth.email}</span>
+              </div>
+              <button
+                className="signout-btn"
+                onClick={() => {
+                  localStorage.removeItem('lexivion_token')
+                  localStorage.removeItem('lexivion_user_email')
+                  setAuth(null)
+                  setSearchResult(null)
+                  setUploadStatus(null)
+                }}
+              >
+                Sign Out
+              </button>
+            </div>
+          )}
         </div>
       </header>
 
       <main className="app-main">
         <div className="container">
-          <div className="workspace-grid">
-            <UploadSection 
-              onUploadSuccess={(message) => {
-                setUploadStatus({ type: 'success', message })
-                setSearchResult(null)
-              }}
-              onUploadError={(error) => {
-                setUploadStatus({ type: 'error', message: error })
-              }}
-            />
-
-            <div className="right-panel">
-              {uploadStatus && (
-                <div className={`status-banner ${uploadStatus.type}`}>
-                  {uploadStatus.type === 'success' ? (
-                    <CheckCircle2 size={20} />
-                  ) : (
-                    <AlertCircle size={20} />
-                  )}
-                  <span>{uploadStatus.message}</span>
-                  <button 
-                    className="close-btn"
-                    onClick={() => setUploadStatus(null)}
-                  >
-                    <X size={16} />
-                  </button>
-                </div>
-              )}
-
-              <SearchSection
-                onSearch={(results) => {
-                  setSearchResult(results)
-                  setUploadStatus(null)
-                }}
-                isSearching={isSearching}
-                setIsSearching={setIsSearching}
-              />
+          {!auth ? (
+            <div className="auth-page">
+              <AuthSection onAuthChange={(info) => setAuth(info)} />
             </div>
-          </div>
+          ) : (
+            <div className="workspace-grid">
+              <UploadSection 
+                onUploadSuccess={(message) => {
+                  setUploadStatus({ type: 'success', message })
+                  setSearchResult(null)
+                }}
+                onUploadError={(error) => {
+                  setUploadStatus({ type: 'error', message: error })
+                }}
+              />
+
+              <div className="right-panel">
+                {uploadStatus && (
+                  <div className={`status-banner ${uploadStatus.type}`}>
+                    {uploadStatus.type === 'success' ? (
+                      <CheckCircle2 size={20} />
+                    ) : (
+                      <AlertCircle size={20} />
+                    )}
+                    <span>{uploadStatus.message}</span>
+                    <button 
+                      className="close-btn"
+                      onClick={() => setUploadStatus(null)}
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                )}
+
+                <SearchSection
+                  onSearch={(results) => {
+                    setSearchResult(results)
+                    setUploadStatus(null)
+                  }}
+                  isSearching={isSearching}
+                  setIsSearching={setIsSearching}
+                />
+              </div>
+            </div>
+          )}
 
           {searchResult && (
             <>

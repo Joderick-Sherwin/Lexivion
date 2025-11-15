@@ -25,9 +25,11 @@ def create_app(testing: bool = False) -> Flask:
     from .routes.ingest import bp as ingest_bp
     from .routes.search import bp as search_bp
     from .routes.documents import bp as documents_bp
+    from .routes.auth import bp as auth_bp
     app.register_blueprint(ingest_bp, url_prefix="/api")
     app.register_blueprint(search_bp, url_prefix="/api")
     app.register_blueprint(documents_bp, url_prefix="/api")
+    app.register_blueprint(auth_bp, url_prefix="/api")
 
     # Health check endpoint
     @app.route("/api/health")
